@@ -56,9 +56,31 @@ pub const O_SYMLINK  = 0x200000; /// allow open of symlinks
 pub const O_EVTONLY  = 0x8000; /// descriptor requested for event notifications only
 pub const O_CLOEXEC  = 0x1000000; /// mark as close-on-exec
 
+pub const O_ACCMODE = 3;
+pub const O_ALERT = 536870912;
+pub const O_ASYNC = 64;
+pub const O_DIRECTORY = 1048576;
+pub const O_DP_GETRAWENCRYPTED = 1;
+pub const O_DP_GETRAWUNENCRYPTED = 2;
+pub const O_DSYNC = 4194304;
+pub const O_FSYNC = O_SYNC;
+pub const O_NOCTTY = 131072;
+pub const O_POPUP = 2147483648;
+pub const O_SYNC = 128;
+
 pub const SEEK_SET = 0x0;
 pub const SEEK_CUR = 0x1;
 pub const SEEK_END = 0x2;
+
+pub const DT_UNKNOWN = 0;
+pub const DT_FIFO = 1;
+pub const DT_CHR = 2;
+pub const DT_DIR = 4;
+pub const DT_BLK = 6;
+pub const DT_REG = 8;
+pub const DT_LNK = 10;
+pub const DT_SOCK = 12;
+pub const DT_WHT = 14;
 
 pub const SIG_BLOCK   = 1; /// block specified signal set
 pub const SIG_UNBLOCK = 2; /// unblock specified signal set
@@ -187,6 +209,10 @@ pub fn fork() -> usize {
     return errnoWrap(c.fork());
 }
 
+pub fn getdirentries64(fd: i32, buf_ptr: &u8, buf_len: usize, basep: &i64) -> usize {
+    return errnoWrap(c.__getdirentries64(fd, buf_ptr, buf_len, basep));
+}
+
 pub fn pipe(fds: &[2]i32) -> usize {
     comptime assert(i32.bit_count == c_int.bit_count);
     return errnoWrap(c.pipe(@ptrCast(&c_int, fds)));
@@ -202,6 +228,10 @@ pub fn symlink(existing: &const u8, new: &const u8) -> usize {
 
 pub fn rename(old: &const u8, new: &const u8) -> usize {
     return errnoWrap(c.rename(old, new));
+}
+
+pub fn rmdir(path: &const u8) -> usize {
+    return errnoWrap(c.rmdir(path));
 }
 
 pub fn chdir(path: &const u8) -> usize {
@@ -270,6 +300,7 @@ pub const empty_sigset = sigset_t(0);
 
 pub const timespec = c.timespec;
 pub const Stat = c.Stat;
+pub const dirent = c.dirent;
 
 /// Renamed from `sigaction` to `Sigaction` to avoid conflict with the syscall.
 pub const Sigaction = struct {
