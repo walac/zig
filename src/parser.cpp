@@ -972,6 +972,7 @@ static AstNode *ast_parse_suffix_op_expr(ParseContext *pc, size_t *token_index, 
 
     Token *async_token = &pc->tokens->at(*token_index);
     if (async_token->id == TokenIdKeywordAsync) {
+        size_t token_index_of_async = *token_index;
         *token_index += 1;
 
         AstNode *allocator_expr_node = nullptr;
@@ -980,6 +981,13 @@ static AstNode *ast_parse_suffix_op_expr(ParseContext *pc, size_t *token_index, 
             *token_index += 1;
             allocator_expr_node = ast_parse_expression(pc, token_index, true);
             ast_eat_token(pc, token_index, TokenIdRParen);
+        }
+
+        Token *maybe_fn_tok = &pc->tokens->at(*token_index);
+        if (maybe_fn_tok->id == TokenIdKeywordFn) {
+            // oh shit dawg this is a fn prototype not a call
+            *token_index = token_index_of_async;
+            return ast_parse_primary_expr(pc, token_index, mandatory);
         }
 
         AstNode *fn_ref_expr_node = ast_parse_primary_expr(pc, token_index, true);
@@ -2438,6 +2446,7 @@ static AstNode *ast_parse_fn_proto(ParseContext *pc, size_t *token_index, bool m
         *token_index += 1;
         Token *next_token = &pc->tokens->at(*token_index);
         if (next_token->id == TokenIdLParen) {
+            *token_index += 1;
             async_allocator_type_node = ast_parse_type_expr(pc, token_index, true);
             ast_eat_token(pc, token_index, TokenIdRParen);
         }
@@ -2898,9 +2907,6 @@ void ast_visit_node_children(AstNode *node, void (*visit)(AstNode **, void *cont
         case NodeTypeFnDef:
             visit_field(&node->data.fn_def.fn_proto, visit, context);
             visit_field(&node->data.fn_def.body, visit, context);
-            break;
-        case NodeTypeFnDecl:
-            visit_field(&node->data.fn_decl.fn_proto, visit, context);
             break;
         case NodeTypeParamDecl:
             visit_field(&node->data.param_decl.type, visit, context);

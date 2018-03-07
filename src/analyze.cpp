@@ -984,6 +984,7 @@ TypeTableEntry *get_fn_type(CodeGen *g, FnTypeId *fn_type_id) {
     // populate the name of the type
     buf_resize(&fn_type->name, 0);
     if (fn_type->data.fn.fn_type_id.cc == CallingConventionAsync) {
+        assert(fn_type_id->async_allocator_type != nullptr);
         buf_appendf(&fn_type->name, "async(%s) ", buf_ptr(&fn_type_id->async_allocator_type->name));
     } else {
         const char *cc_str = calling_convention_fn_type_str(fn_type->data.fn.fn_type_id.cc);
@@ -3189,7 +3190,6 @@ void scan_decls(CodeGen *g, ScopeDecls *decls_scope, AstNode *node) {
             break;
         case NodeTypeContainerDecl:
         case NodeTypeParamDecl:
-        case NodeTypeFnDecl:
         case NodeTypeReturnExpr:
         case NodeTypeDefer:
         case NodeTypeBlock:

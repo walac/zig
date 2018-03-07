@@ -2135,11 +2135,13 @@ static IrInstruction *ir_build_unwrap_err_payload_from(IrBuilder *irb, IrInstruc
 }
 
 static IrInstruction *ir_build_fn_proto(IrBuilder *irb, Scope *scope, AstNode *source_node,
-    IrInstruction **param_types, IrInstruction *align_value, IrInstruction *return_type, bool is_var_args)
+    IrInstruction **param_types, IrInstruction *align_value, IrInstruction *async_allocator_type_value,
+    IrInstruction *return_type, bool is_var_args)
 {
     IrInstructionFnProto *instruction = ir_build_instruction<IrInstructionFnProto>(irb, scope, source_node);
     instruction->param_types = param_types;
     instruction->align_value = align_value;
+    instruction->async_allocator_type_value = async_allocator_type_value;
     instruction->return_type = return_type;
     instruction->is_var_args = is_var_args;
 
@@ -2150,6 +2152,7 @@ static IrInstruction *ir_build_fn_proto(IrBuilder *irb, Scope *scope, AstNode *s
         ir_ref_instruction(param_types[i], irb->current_basic_block);
     }
     if (align_value != nullptr) ir_ref_instruction(align_value, irb->current_basic_block);
+    if (async_allocator_type_value != nullptr) ir_ref_instruction(async_allocator_type_value, irb->current_basic_block);
     ir_ref_instruction(return_type, irb->current_basic_block);
 
     return &instruction->base;
@@ -5930,6 +5933,13 @@ static IrInstruction *ir_gen_fn_proto(IrBuilder *irb, Scope *parent_scope, AstNo
             return irb->codegen->invalid_instruction;
     }
 
+    IrInstruction *async_allocator_type_value = nullptr;
+    if (node->data.fn_proto.async_allocator_type != nullptr) {
+        async_allocator_type_value = ir_gen_node(irb, node->data.fn_proto.async_allocator_type, parent_scope);
+        if (async_allocator_type_value == irb->codegen->invalid_instruction)
+            return irb->codegen->invalid_instruction;
+    }
+
     IrInstruction *return_type;
     if (node->data.fn_proto.return_type == nullptr) {
         return_type = ir_build_const_type(irb, parent_scope, node, irb->codegen->builtin_types.entry_void);
@@ -5939,7 +5949,8 @@ static IrInstruction *ir_gen_fn_proto(IrBuilder *irb, Scope *parent_scope, AstNo
             return irb->codegen->invalid_instruction;
     }
 
-    return ir_build_fn_proto(irb, parent_scope, node, param_types, align_value, return_type, is_var_args);
+    return ir_build_fn_proto(irb, parent_scope, node, param_types, align_value, async_allocator_type_value,
+            return_type, is_var_args);
 }
 
 static IrInstruction *ir_gen_cancel(IrBuilder *irb, Scope *parent_scope, AstNode *node) {
@@ -6136,7 +6147,6 @@ static IrInstruction *ir_gen_node_raw(IrBuilder *irb, AstNode *node, Scope *scop
         case NodeTypeSwitchRange:
         case NodeTypeStructField:
         case NodeTypeFnDef:
-        case NodeTypeFnDecl:
         case NodeTypeTestDecl:
             zig_unreachable();
         case NodeTypeBlock:
@@ -16476,6 +16486,12 @@ static TypeTableEntry *ir_analyze_instruction_fn_proto(IrAnalyze *ira, IrInstruc
 
     if (instruction->align_value != nullptr) {
         if (!ir_resolve_align(ira, instruction->align_value->other, &fn_type_id.alignment))
+            return ira->codegen->builtin_types.entry_invalid;
+    }
+
+    if (instruction->async_allocator_type_value != nullptr) {
+        fn_type_id.async_allocator_type = ir_resolve_type(ira, instruction->async_allocator_type_value->other);
+        if (type_is_invalid(fn_type_id.async_allocator_type))
             return ira->codegen->builtin_types.entry_invalid;
     }
 
