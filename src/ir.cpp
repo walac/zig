@@ -707,6 +707,10 @@ static constexpr IrInstructionId ir_instruction_id(IrInstructionPromiseResultTyp
     return IrInstructionIdPromiseResultType;
 }
 
+static constexpr IrInstructionId ir_instruction_id(IrInstructionAddImplicitReturnType *) {
+    return IrInstructionIdAddImplicitReturnType;
+}
+
 template<typename T>
 static T *ir_create_instruction(IrBuilder *irb, Scope *scope, AstNode *source_node) {
     T *special_instruction = allocate<T>(1);
@@ -2628,6 +2632,17 @@ static IrInstruction *ir_build_coro_alloc_helper(IrBuilder *irb, Scope *scope, A
     return &instruction->base;
 }
 
+static IrInstruction *ir_build_add_implicit_return_type(IrBuilder *irb, Scope *scope, AstNode *source_node,
+        IrInstruction *value)
+{
+    IrInstructionAddImplicitReturnType *instruction = ir_build_instruction<IrInstructionAddImplicitReturnType>(irb, scope, source_node);
+    instruction->value = value;
+
+    ir_ref_instruction(value, irb->current_basic_block);
+
+    return &instruction->base;
+}
+
 static IrInstruction *ir_build_atomic_rmw(IrBuilder *irb, Scope *scope, AstNode *source_node,
         IrInstruction *operand_type, IrInstruction *ptr, IrInstruction *op, IrInstruction *operand,
         IrInstruction *ordering, AtomicRmwOp resolved_op, AtomicOrder resolved_ordering)
@@ -2736,6 +2751,8 @@ static ScopeDeferExpr *get_scope_defer_expr(Scope *scope) {
 static IrInstruction *ir_gen_async_return(IrBuilder *irb, Scope *scope, AstNode *node, IrInstruction *return_value,
     bool is_generated_code)
 {
+    ir_mark_gen(ir_build_add_implicit_return_type(irb, scope, node, return_value));
+
     FnTableEntry *fn_entry = exec_fn_entry(irb->exec);
     bool is_async = fn_entry != nullptr && fn_entry->type_entry->data.fn.fn_type_id.cc == CallingConventionAsync;
     if (!is_async) {
@@ -2744,7 +2761,7 @@ static IrInstruction *ir_gen_async_return(IrBuilder *irb, Scope *scope, AstNode 
         return return_inst;
     }
 
-    if (irb->exec->coro_result_ptr_field_ptr) {
+    if (irb->exec->coro_result_ptr_field_ptr != nullptr) {
         IrInstruction *result_ptr = ir_build_load_ptr(irb, scope, node, irb->exec->coro_result_ptr_field_ptr);
         ir_build_store_ptr(irb, scope, node, result_ptr, return_value);
     }
@@ -10046,13 +10063,26 @@ static Buf *ir_resolve_str(IrAnalyze *ira, IrInstruction *value) {
     return result;
 }
 
+static TypeTableEntry *ir_analyze_instruction_add_implicit_return_type(IrAnalyze *ira,
+        IrInstructionAddImplicitReturnType *instruction)
+{
+    IrInstruction *value = instruction->value->other;
+    if (type_is_invalid(value->value.type))
+        return ira->codegen->builtin_types.entry_invalid;
+
+    ira->implicit_return_type_list.append(value);
+
+    ConstExprValue *out_val = ir_build_const_from(ira, &instruction->base);
+    out_val->type = ira->codegen->builtin_types.entry_void;
+    return out_val->type;
+}
+
 static TypeTableEntry *ir_analyze_instruction_return(IrAnalyze *ira,
     IrInstructionReturn *return_instruction)
 {
     IrInstruction *value = return_instruction->value->other;
     if (type_is_invalid(value->value.type))
         return ir_unreach_error(ira);
-    ira->implicit_return_type_list.append(value);
 
     IrInstruction *casted_value = ir_implicit_cast(ira, value, ira->explicit_return_type);
     if (casted_value == ira->codegen->invalid_instruction)
@@ -17913,6 +17943,8 @@ static TypeTableEntry *ir_analyze_instruction_nocast(IrAnalyze *ira, IrInstructi
             return ir_analyze_instruction_atomic_rmw(ira, (IrInstructionAtomicRmw *)instruction);
         case IrInstructionIdPromiseResultType:
             return ir_analyze_instruction_promise_result_type(ira, (IrInstructionPromiseResultType *)instruction);
+        case IrInstructionIdAddImplicitReturnType:
+            return ir_analyze_instruction_add_implicit_return_type(ira, (IrInstructionAddImplicitReturnType *)instruction);
     }
     zig_unreachable();
 }
@@ -18037,6 +18069,7 @@ bool ir_has_side_effects(IrInstruction *instruction) {
         case IrInstructionIdCoroResume:
         case IrInstructionIdCoroSave:
         case IrInstructionIdCoroAllocHelper:
+        case IrInstructionIdAddImplicitReturnType:
             return true;
 
         case IrInstructionIdPhi:

@@ -2021,6 +2021,7 @@ enum IrInstructionId {
     IrInstructionIdCoroAllocHelper,
     IrInstructionIdAtomicRmw,
     IrInstructionIdPromiseResultType,
+    IrInstructionIdAddImplicitReturnType,
 };
 
 struct IrInstruction {
@@ -2967,6 +2968,12 @@ struct IrInstructionPromiseResultType {
     IrInstruction base;
 
     IrInstruction *promise_type;
+};
+
+struct IrInstructionAddImplicitReturnType {
+    IrInstruction base;
+
+    IrInstruction *value;
 };
 
 static const size_t slice_ptr_index = 0;

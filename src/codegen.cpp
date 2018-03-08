@@ -4251,6 +4251,7 @@ static LLVMValueRef ir_render_instruction(CodeGen *g, IrExecutable *executable, 
         case IrInstructionIdExport:
         case IrInstructionIdErrorUnion:
         case IrInstructionIdPromiseResultType:
+        case IrInstructionIdAddImplicitReturnType:
             zig_unreachable();
 
         case IrInstructionIdReturn:
