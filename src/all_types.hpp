@@ -3014,6 +3014,7 @@ static const size_t err_union_payload_index = 1;
 #define RESULT_FIELD_NAME "result"
 #define ERR_RET_ADDR_FIELD_NAME "err_ret_addr"
 #define RESULT_PTR_FIELD_NAME "result_ptr"
+#define ERR_RET_ADDR_PTR_FIELD_NAME "err_ret_addr_ptr"
 
 
 enum FloatMode {

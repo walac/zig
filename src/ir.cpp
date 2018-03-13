@@ -967,6 +967,8 @@ static IrInstruction *ir_build_const_promise_init(IrBuilder *irb, Scope *scope, 
     if (struct_type->data.structure.src_field_count >= 4) {
         const_instruction->base.value.data.x_struct.fields[3].type = struct_type->data.structure.fields[3].type_entry;
         const_instruction->base.value.data.x_struct.fields[3].special = ConstValSpecialUndef;
+        const_instruction->base.value.data.x_struct.fields[4].type = struct_type->data.structure.fields[4].type_entry;
+        const_instruction->base.value.data.x_struct.fields[4].special = ConstValSpecialUndef;
     }
     return &const_instruction->base;
 }
@@ -6087,6 +6089,17 @@ static IrInstruction *ir_gen_await_expr(IrBuilder *irb, Scope *parent_scope, Ast
     ir_build_var_decl(irb, parent_scope, node, result_var, promise_result_type, nullptr, undefined_value);
     IrInstruction *my_result_var_ptr = ir_build_var_ptr(irb, parent_scope, node, result_var, false, false);
     ir_build_store_ptr(irb, parent_scope, node, result_ptr_field_ptr, my_result_var_ptr);
+    if (irb->codegen->have_err_ret_tracing) {
+        Buf *err_ret_addr_ptr_field_name = buf_create_from_str(ERR_RET_ADDR_PTR_FIELD_NAME);
+        IrInstruction *err_ret_addr_ptr_field_ptr = ir_build_field_ptr(irb, parent_scope, node, coro_promise_ptr, err_ret_addr_ptr_field_name);
+
+        VariableTableEntry *err_ret_addr_var = ir_create_var(irb, node, parent_scope, nullptr,
+                false, false, true, const_bool_false);
+        IrInstruction *usize = ir_build_const_type(irb, parent_scope, node, irb->codegen->builtin_types.entry_usize);
+        ir_build_var_decl(irb, parent_scope, node, err_ret_addr_var, usize, nullptr, undefined_value);
+        IrInstruction *my_err_ret_addr_var_ptr = ir_build_var_ptr(irb, parent_scope, node, err_ret_addr_var, false, false);
+        ir_build_store_ptr(irb, parent_scope, node, err_ret_addr_ptr_field_ptr, my_err_ret_addr_var_ptr);
+    }
     IrInstruction *save_token = ir_build_coro_save(irb, parent_scope, node, irb->exec->coro_handle);
     IrInstruction *promise_type_val = ir_build_const_type(irb, parent_scope, node,
             get_maybe_type(irb->codegen, irb->codegen->builtin_types.entry_promise));
