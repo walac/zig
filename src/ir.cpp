@@ -715,6 +715,10 @@ static constexpr IrInstructionId ir_instruction_id(IrInstructionSaveErrRetAddr *
     return IrInstructionIdSaveErrRetAddr;
 }
 
+static constexpr IrInstructionId ir_instruction_id(IrInstructionInstrAddr *) {
+    return IrInstructionIdInstrAddr;
+}
+
 template<typename T>
 static T *ir_create_instruction(IrBuilder *irb, Scope *scope, AstNode *source_node) {
     T *special_instruction = allocate<T>(1);
@@ -960,6 +964,10 @@ static IrInstruction *ir_build_const_promise_init(IrBuilder *irb, Scope *scope, 
     const_instruction->base.value.data.x_struct.fields[1].special = ConstValSpecialUndef;
     const_instruction->base.value.data.x_struct.fields[2].type = struct_type->data.structure.fields[2].type_entry;
     const_instruction->base.value.data.x_struct.fields[2].special = ConstValSpecialUndef;
+    if (struct_type->data.structure.src_field_count >= 4) {
+        const_instruction->base.value.data.x_struct.fields[3].type = struct_type->data.structure.fields[3].type_entry;
+        const_instruction->base.value.data.x_struct.fields[3].special = ConstValSpecialUndef;
+    }
     return &const_instruction->base;
 }
 
@@ -2680,6 +2688,11 @@ static IrInstruction *ir_build_save_err_ret_addr(IrBuilder *irb, Scope *scope, A
     return &instruction->base;
 }
 
+static IrInstruction *ir_build_instr_addr(IrBuilder *irb, Scope *scope, AstNode *source_node) {
+    IrInstructionInstrAddr *instruction = ir_build_instruction<IrInstructionInstrAddr>(irb, scope, source_node);
+    return &instruction->base;
+}
+
 static void ir_count_defers(IrBuilder *irb, Scope *inner_scope, Scope *outer_scope, size_t *results) {
     results[ReturnKindUnconditional] = 0;
     results[ReturnKindError] = 0;
@@ -2801,10 +2814,8 @@ static void ir_gen_save_err_ret_addr(IrBuilder *irb, Scope *scope, AstNode *node
     bool is_async = exec_is_async(irb->exec);
 
     if (is_async) {
-        //IrInstruction *err_ret_addr_ptr = ir_build_load_ptr(irb, scope, node, irb->exec->coro_err_ret_addr_ptr);
-        //IrInstruction *return_address_ptr = ir_build_instr_addr(irb, scope, node);
-        //IrInstruction *return_address_usize = ir_build_ptr_to_int(irb, scope, node, return_address_ptr);
-        //ir_build_store_ptr(irb, scope, node, err_ret_addr_ptr, return_address_usize);
+        IrInstruction *instr_address = ir_build_instr_addr(irb, scope, node);
+        ir_build_store_ptr(irb, scope, node, irb->exec->coro_err_ret_addr_field_ptr, instr_address);
         return;
     }
 
@@ -6385,6 +6396,7 @@ bool ir_gen(CodeGen *codegen, AstNode *node, Scope *scope, IrExecutable *ir_exec
 
         ir_set_cursor_at_end_and_append_block(irb, alloc_err_block);
         IrInstruction *undef = ir_build_const_undefined(irb, scope, node);
+        ir_build_save_err_ret_addr(irb, scope, node);
         ir_build_return(irb, scope, node, undef);
 
         ir_set_cursor_at_end_and_append_block(irb, alloc_ok_block);
@@ -6396,6 +6408,10 @@ bool ir_gen(CodeGen *codegen, AstNode *node, Scope *scope, IrExecutable *ir_exec
                 awaiter_handle_field_name);
         Buf *result_field_name = buf_create_from_str(RESULT_FIELD_NAME);
         irb->exec->coro_result_field_ptr = ir_build_field_ptr(irb, scope, node, coro_promise_ptr, result_field_name);
+        if (irb->codegen->have_err_ret_tracing) {
+            Buf *err_ret_addr_field_name = buf_create_from_str(ERR_RET_ADDR_FIELD_NAME);
+            irb->exec->coro_err_ret_addr_field_ptr = ir_build_field_ptr(irb, scope, node, coro_promise_ptr, err_ret_addr_field_name);
+        }
         result_ptr_field_name = buf_create_from_str(RESULT_PTR_FIELD_NAME);
         irb->exec->coro_result_ptr_field_ptr = ir_build_field_ptr(irb, scope, node, coro_promise_ptr, result_ptr_field_name);
         ir_build_store_ptr(irb, scope, node, irb->exec->coro_result_ptr_field_ptr, irb->exec->coro_result_field_ptr);
@@ -17760,6 +17776,14 @@ static TypeTableEntry *ir_analyze_instruction_save_err_ret_addr(IrAnalyze *ira, 
     return result->value.type;
 }
 
+static TypeTableEntry *ir_analyze_instruction_instr_addr(IrAnalyze *ira, IrInstructionInstrAddr *instruction) {
+    IrInstruction *result = ir_build_instr_addr(&ira->new_irb, instruction->base.scope,
+            instruction->base.source_node);
+    ir_link_new_instruction(result, &instruction->base);
+    result->value.type = ira->codegen->builtin_types.entry_usize;
+    return result->value.type;
+}
+
 static TypeTableEntry *ir_analyze_instruction_nocast(IrAnalyze *ira, IrInstruction *instruction) {
     switch (instruction->id) {
         case IrInstructionIdInvalid:
@@ -17999,6 +18023,8 @@ static TypeTableEntry *ir_analyze_instruction_nocast(IrAnalyze *ira, IrInstructi
             return ir_analyze_instruction_await_bookkeeping(ira, (IrInstructionAwaitBookkeeping *)instruction);
         case IrInstructionIdSaveErrRetAddr:
             return ir_analyze_instruction_save_err_ret_addr(ira, (IrInstructionSaveErrRetAddr *)instruction);
+        case IrInstructionIdInstrAddr:
+            return ir_analyze_instruction_instr_addr(ira, (IrInstructionInstrAddr *)instruction);
     }
     zig_unreachable();
 }
@@ -18207,6 +18233,7 @@ bool ir_has_side_effects(IrInstruction *instruction) {
         case IrInstructionIdAtomicRmw:
         case IrInstructionIdCoroPromise:
         case IrInstructionIdPromiseResultType:
+        case IrInstructionIdInstrAddr:
             return false;
 
         case IrInstructionIdAsm:

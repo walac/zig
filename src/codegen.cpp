@@ -1195,6 +1195,44 @@ static LLVMValueRef get_return_err_fn(CodeGen *g) {
     return fn_val;
 }
 
+static LLVMValueRef get_return_addr_fn(CodeGen *g) {
+    if (g->return_addr_fn != nullptr)
+        return g->return_addr_fn;
+
+    LLVMTypeRef usize_type_ref = g->builtin_types.entry_usize->type_ref;
+    LLVMTypeRef fn_type_ref = LLVMFunctionType(usize_type_ref, nullptr, 0, false);
+
+    Buf *fn_name = get_mangled_name(g, buf_create_from_str("__zig_instr_addr"), false);
+    LLVMValueRef fn_val = LLVMAddFunction(g->module, buf_ptr(fn_name), fn_type_ref);
+    addLLVMFnAttr(fn_val, "noinline"); // so that we can look at return address
+    LLVMSetLinkage(fn_val, LLVMInternalLinkage);
+    LLVMSetFunctionCallConv(fn_val, get_llvm_cc(g, CallingConventionUnspecified));
+    addLLVMFnAttr(fn_val, "nounwind");
+    add_uwtable_attr(g, fn_val);
+    if (g->build_mode == BuildModeDebug) {
+        ZigLLVMAddFunctionAttr(fn_val, "no-frame-pointer-elim", "true");
+        ZigLLVMAddFunctionAttr(fn_val, "no-frame-pointer-elim-non-leaf", nullptr);
+    }
+
+    LLVMBasicBlockRef entry_block = LLVMAppendBasicBlock(fn_val, "Entry");
+    LLVMBasicBlockRef prev_block = LLVMGetInsertBlock(g->builder);
+    LLVMValueRef prev_debug_location = LLVMGetCurrentDebugLocation(g->builder);
+    LLVMPositionBuilderAtEnd(g->builder, entry_block);
+    ZigLLVMClearCurrentDebugLocation(g->builder);
+
+
+    LLVMValueRef zero = LLVMConstNull(g->builtin_types.entry_i32->type_ref);
+    LLVMValueRef return_address_ptr = LLVMBuildCall(g->builder, get_return_address_fn_val(g), &zero, 1, "");
+    LLVMValueRef return_address = LLVMBuildPtrToInt(g->builder, return_address_ptr, usize_type_ref, "");
+    LLVMBuildRet(g->builder, return_address);
+
+    LLVMPositionBuilderAtEnd(g->builder, prev_block);
+    LLVMSetCurrentDebugLocation(g->builder, prev_debug_location);
+
+    g->return_addr_fn = fn_val;
+    return fn_val;
+}
+
 static LLVMValueRef get_safety_crash_err_fn(CodeGen *g) {
     if (g->safety_crash_err_fn != nullptr)
         return g->safety_crash_err_fn;
@@ -1620,6 +1658,14 @@ static LLVMValueRef ir_render_save_err_ret_addr(CodeGen *g, IrExecutable *execut
             get_llvm_cc(g, CallingConventionUnspecified), ZigLLVM_FnInlineAuto, "");
     LLVMSetTailCall(call_instruction, true);
     return call_instruction;
+}
+
+static LLVMValueRef ir_render_instr_addr(CodeGen *g, IrExecutable *executable,
+        IrInstructionInstrAddr *instr_addr_instruction)
+{
+    LLVMValueRef return_addr_fn = get_return_addr_fn(g);
+    return ZigLLVMBuildCall(g->builder, return_addr_fn, nullptr, 0,
+            get_llvm_cc(g, CallingConventionUnspecified), ZigLLVM_FnInlineAuto, "");
 }
 
 static LLVMValueRef ir_render_return(CodeGen *g, IrExecutable *executable, IrInstructionReturn *return_instruction) {
@@ -4395,6 +4441,8 @@ static LLVMValueRef ir_render_instruction(CodeGen *g, IrExecutable *executable, 
             return ir_render_atomic_rmw(g, executable, (IrInstructionAtomicRmw *)instruction);
         case IrInstructionIdSaveErrRetAddr:
             return ir_render_save_err_ret_addr(g, executable, (IrInstructionSaveErrRetAddr *)instruction);
+        case IrInstructionIdInstrAddr:
+            return ir_render_instr_addr(g, executable, (IrInstructionInstrAddr *)instruction);
     }
     zig_unreachable();
 }

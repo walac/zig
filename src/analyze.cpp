@@ -462,10 +462,21 @@ TypeTableEntry *get_promise_frame_type(CodeGen *g, TypeTableEntry *return_type) 
 
     TypeTableEntry *awaiter_handle_type = get_maybe_type(g, g->builtin_types.entry_promise);
     TypeTableEntry *result_ptr_type = get_pointer_to_type(g, return_type, false);
-    const char *field_names[] = {AWAITER_HANDLE_FIELD_NAME, RESULT_FIELD_NAME, RESULT_PTR_FIELD_NAME};
-    TypeTableEntry *field_types[] = {awaiter_handle_type, return_type, result_ptr_type};
+    const char *field_names[] = {
+        AWAITER_HANDLE_FIELD_NAME,
+        RESULT_FIELD_NAME,
+        RESULT_PTR_FIELD_NAME,
+        ERR_RET_ADDR_FIELD_NAME,
+    };
+    TypeTableEntry *field_types[] = {
+        awaiter_handle_type,
+        return_type,
+        result_ptr_type,
+        g->builtin_types.entry_usize,
+    };
     Buf *name = buf_sprintf("AsyncFramePromise(%s)", buf_ptr(&return_type->name));
-    TypeTableEntry *entry = get_struct_type(g, buf_ptr(name), field_names, field_types, 3);
+    uint32_t field_count = g->have_err_ret_tracing ? 4 : 3;
+    TypeTableEntry *entry = get_struct_type(g, buf_ptr(name), field_names, field_types, field_count);
 
     return_type->promise_frame_parent = entry;
     return entry;

@@ -1165,6 +1165,10 @@ static void ir_print_save_err_ret_addr(IrPrint *irp, IrInstructionSaveErrRetAddr
     fprintf(irp->f, "@saveErrRetAddr()");
 }
 
+static void ir_print_instr_addr(IrPrint *irp, IrInstructionInstrAddr *instruction) {
+    fprintf(irp->f, "@instrAddr()");
+}
+
 static void ir_print_instruction(IrPrint *irp, IrInstruction *instruction) {
     ir_print_prefix(irp, instruction);
     switch (instruction->id) {
@@ -1538,6 +1542,9 @@ static void ir_print_instruction(IrPrint *irp, IrInstruction *instruction) {
             break;
         case IrInstructionIdSaveErrRetAddr:
             ir_print_save_err_ret_addr(irp, (IrInstructionSaveErrRetAddr *)instruction);
+            break;
+        case IrInstructionIdInstrAddr:
+            ir_print_instr_addr(irp, (IrInstructionInstrAddr *)instruction);
             break;
     }
     fprintf(irp->f, "\n");

@@ -63,6 +63,7 @@ struct IrExecutable {
     IrInstruction *coro_awaiter_field_ptr; // this one is shared and in the promise
     IrInstruction *coro_result_ptr_field_ptr;
     IrInstruction *coro_result_field_ptr;
+    IrInstruction *coro_err_ret_addr_field_ptr;
     IrInstruction *await_handle_var_ptr; // this one is where we put the one we extracted from the promise
     IrBasicBlock *coro_early_final;
     IrBasicBlock *coro_normal_final;
@@ -1669,6 +1670,7 @@ struct CodeGen {
     LLVMValueRef safety_crash_err_fn;
 
     LLVMValueRef return_err_fn;
+    LLVMValueRef return_addr_fn;
 
     IrInstruction *invalid_instruction;
     ConstExprValue const_void_val;
@@ -2035,6 +2037,7 @@ enum IrInstructionId {
     IrInstructionIdPromiseResultType,
     IrInstructionIdAwaitBookkeeping,
     IrInstructionIdSaveErrRetAddr,
+    IrInstructionIdInstrAddr,
 };
 
 struct IrInstruction {
@@ -2992,6 +2995,10 @@ struct IrInstructionSaveErrRetAddr {
     IrInstruction base;
 };
 
+struct IrInstructionInstrAddr {
+    IrInstruction base;
+};
+
 static const size_t slice_ptr_index = 0;
 static const size_t slice_len_index = 1;
 
@@ -3005,6 +3012,7 @@ static const size_t err_union_payload_index = 1;
 #define ASYNC_FREE_FIELD_NAME "freeFn"
 #define AWAITER_HANDLE_FIELD_NAME "awaiter_handle"
 #define RESULT_FIELD_NAME "result"
+#define ERR_RET_ADDR_FIELD_NAME "err_ret_addr"
 #define RESULT_PTR_FIELD_NAME "result_ptr"
 
 
