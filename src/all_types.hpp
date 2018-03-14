@@ -1671,6 +1671,7 @@ struct CodeGen {
 
     LLVMValueRef return_err_fn;
     LLVMValueRef return_addr_fn;
+    LLVMValueRef add_err_ret_addr_fn;
 
     IrInstruction *invalid_instruction;
     ConstExprValue const_void_val;
@@ -2037,6 +2038,7 @@ enum IrInstructionId {
     IrInstructionIdPromiseResultType,
     IrInstructionIdAwaitBookkeeping,
     IrInstructionIdSaveErrRetAddr,
+    IrInstructionIdSaveErrRetAddrParam,
     IrInstructionIdInstrAddr,
 };
 
@@ -2993,6 +2995,12 @@ struct IrInstructionAwaitBookkeeping {
 
 struct IrInstructionSaveErrRetAddr {
     IrInstruction base;
+};
+
+struct IrInstructionSaveErrRetAddrParam {
+    IrInstruction base;
+
+    IrInstruction *addr;
 };
 
 struct IrInstructionInstrAddr {

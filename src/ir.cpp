@@ -715,6 +715,10 @@ static constexpr IrInstructionId ir_instruction_id(IrInstructionSaveErrRetAddr *
     return IrInstructionIdSaveErrRetAddr;
 }
 
+static constexpr IrInstructionId ir_instruction_id(IrInstructionSaveErrRetAddrParam *) {
+    return IrInstructionIdSaveErrRetAddrParam;
+}
+
 static constexpr IrInstructionId ir_instruction_id(IrInstructionInstrAddr *) {
     return IrInstructionIdInstrAddr;
 }
@@ -2687,6 +2691,16 @@ static IrInstruction *ir_build_await_bookkeeping(IrBuilder *irb, Scope *scope, A
 
 static IrInstruction *ir_build_save_err_ret_addr(IrBuilder *irb, Scope *scope, AstNode *source_node) {
     IrInstructionSaveErrRetAddr *instruction = ir_build_instruction<IrInstructionSaveErrRetAddr>(irb, scope, source_node);
+    return &instruction->base;
+}
+
+static IrInstruction *ir_build_save_err_ret_addr_param(IrBuilder *irb, Scope *scope, AstNode *source_node,
+        IrInstruction *addr)
+{
+    IrInstructionSaveErrRetAddrParam *instruction = ir_build_instruction<IrInstructionSaveErrRetAddrParam>(irb, scope, source_node);
+    instruction->addr = addr;
+
+    ir_ref_instruction(addr, irb->current_basic_block);
     return &instruction->base;
 }
 
@@ -6089,6 +6103,8 @@ static IrInstruction *ir_gen_await_expr(IrBuilder *irb, Scope *parent_scope, Ast
     ir_build_var_decl(irb, parent_scope, node, result_var, promise_result_type, nullptr, undefined_value);
     IrInstruction *my_result_var_ptr = ir_build_var_ptr(irb, parent_scope, node, result_var, false, false);
     ir_build_store_ptr(irb, parent_scope, node, result_ptr_field_ptr, my_result_var_ptr);
+
+    IrInstruction *my_err_ret_addr_var_ptr;
     if (irb->codegen->have_err_ret_tracing) {
         Buf *err_ret_addr_ptr_field_name = buf_create_from_str(ERR_RET_ADDR_PTR_FIELD_NAME);
         IrInstruction *err_ret_addr_ptr_field_ptr = ir_build_field_ptr(irb, parent_scope, node, coro_promise_ptr, err_ret_addr_ptr_field_name);
@@ -6096,8 +6112,9 @@ static IrInstruction *ir_gen_await_expr(IrBuilder *irb, Scope *parent_scope, Ast
         VariableTableEntry *err_ret_addr_var = ir_create_var(irb, node, parent_scope, nullptr,
                 false, false, true, const_bool_false);
         IrInstruction *usize = ir_build_const_type(irb, parent_scope, node, irb->codegen->builtin_types.entry_usize);
-        ir_build_var_decl(irb, parent_scope, node, err_ret_addr_var, usize, nullptr, undefined_value);
-        IrInstruction *my_err_ret_addr_var_ptr = ir_build_var_ptr(irb, parent_scope, node, err_ret_addr_var, false, false);
+        IrInstruction *zero_value = ir_build_const_usize(irb, parent_scope, node, 0);
+        ir_build_var_decl(irb, parent_scope, node, err_ret_addr_var, usize, nullptr, zero_value);
+        my_err_ret_addr_var_ptr = ir_build_var_ptr(irb, parent_scope, node, err_ret_addr_var, false, false);
         ir_build_store_ptr(irb, parent_scope, node, err_ret_addr_ptr_field_ptr, my_err_ret_addr_var_ptr);
     }
     IrInstruction *save_token = ir_build_coro_save(irb, parent_scope, node, irb->exec->coro_handle);
@@ -6137,6 +6154,10 @@ static IrInstruction *ir_gen_await_expr(IrBuilder *irb, Scope *parent_scope, Ast
     ir_build_br(irb, parent_scope, node, irb->exec->coro_final_cleanup_block, const_bool_false);
 
     ir_set_cursor_at_end_and_append_block(irb, resume_block);
+    if (irb->codegen->have_err_ret_tracing) {
+        IrInstruction *err_ret_addr = ir_build_load_ptr(irb, parent_scope, node, my_err_ret_addr_var_ptr);
+        ir_build_save_err_ret_addr_param(irb, parent_scope, node, err_ret_addr);
+    }
     IrInstruction *yes_suspend_result = ir_build_load_ptr(irb, parent_scope, node, my_result_var_ptr);
     ir_build_br(irb, parent_scope, node, merge_block, const_bool_false);
 
@@ -17789,6 +17810,18 @@ static TypeTableEntry *ir_analyze_instruction_save_err_ret_addr(IrAnalyze *ira, 
     return result->value.type;
 }
 
+static TypeTableEntry *ir_analyze_instruction_save_err_ret_addr_param(IrAnalyze *ira, IrInstructionSaveErrRetAddrParam *instruction) {
+    IrInstruction *addr = instruction->addr->other;
+    if (type_is_invalid(addr->value.type))
+        return ira->codegen->builtin_types.entry_invalid;
+
+    IrInstruction *result = ir_build_save_err_ret_addr_param(&ira->new_irb, instruction->base.scope,
+            instruction->base.source_node, addr);
+    ir_link_new_instruction(result, &instruction->base);
+    result->value.type = ira->codegen->builtin_types.entry_void;
+    return result->value.type;
+}
+
 static TypeTableEntry *ir_analyze_instruction_instr_addr(IrAnalyze *ira, IrInstructionInstrAddr *instruction) {
     IrInstruction *result = ir_build_instr_addr(&ira->new_irb, instruction->base.scope,
             instruction->base.source_node);
@@ -18036,6 +18069,8 @@ static TypeTableEntry *ir_analyze_instruction_nocast(IrAnalyze *ira, IrInstructi
             return ir_analyze_instruction_await_bookkeeping(ira, (IrInstructionAwaitBookkeeping *)instruction);
         case IrInstructionIdSaveErrRetAddr:
             return ir_analyze_instruction_save_err_ret_addr(ira, (IrInstructionSaveErrRetAddr *)instruction);
+        case IrInstructionIdSaveErrRetAddrParam:
+            return ir_analyze_instruction_save_err_ret_addr_param(ira, (IrInstructionSaveErrRetAddrParam *)instruction);
         case IrInstructionIdInstrAddr:
             return ir_analyze_instruction_instr_addr(ira, (IrInstructionInstrAddr *)instruction);
     }
@@ -18164,6 +18199,7 @@ bool ir_has_side_effects(IrInstruction *instruction) {
         case IrInstructionIdCoroAllocHelper:
         case IrInstructionIdAwaitBookkeeping:
         case IrInstructionIdSaveErrRetAddr:
+        case IrInstructionIdSaveErrRetAddrParam:
             return true;
 
         case IrInstructionIdPhi:
