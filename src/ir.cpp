@@ -970,7 +970,8 @@ static IrInstruction *ir_build_const_promise_init(IrBuilder *irb, Scope *scope, 
     const_instruction->base.value.data.x_struct.fields[2].special = ConstValSpecialUndef;
     if (struct_type->data.structure.src_field_count >= 4) {
         const_instruction->base.value.data.x_struct.fields[3].type = struct_type->data.structure.fields[3].type_entry;
-        const_instruction->base.value.data.x_struct.fields[3].special = ConstValSpecialUndef;
+        const_instruction->base.value.data.x_struct.fields[3].special = ConstValSpecialStatic;
+        bigint_init_unsigned(&const_instruction->base.value.data.x_struct.fields[3].data.x_bigint, 0);
         const_instruction->base.value.data.x_struct.fields[4].type = struct_type->data.structure.fields[4].type_entry;
         const_instruction->base.value.data.x_struct.fields[4].special = ConstValSpecialUndef;
     }
@@ -6130,6 +6131,12 @@ static IrInstruction *ir_gen_await_expr(IrBuilder *irb, Scope *parent_scope, Ast
     ir_build_cond_br(irb, parent_scope, node, is_non_null, no_suspend_block, yes_suspend_block, const_bool_false);
 
     ir_set_cursor_at_end_and_append_block(irb, no_suspend_block);
+    if (irb->codegen->have_err_ret_tracing) {
+        Buf *err_ret_addr_field_name = buf_create_from_str(ERR_RET_ADDR_FIELD_NAME);
+        IrInstruction *err_ret_addr_ptr = ir_build_field_ptr(irb, parent_scope, node, coro_promise_ptr, err_ret_addr_field_name);
+        IrInstruction *err_ret_addr = ir_build_load_ptr(irb, parent_scope, node, err_ret_addr_ptr);
+        ir_build_save_err_ret_addr_param(irb, parent_scope, node, err_ret_addr);
+    }
     Buf *result_field_name = buf_create_from_str(RESULT_FIELD_NAME);
     IrInstruction *promise_result_ptr = ir_build_field_ptr(irb, parent_scope, node, coro_promise_ptr, result_field_name);
     IrInstruction *no_suspend_result = ir_build_load_ptr(irb, parent_scope, node, promise_result_ptr);
