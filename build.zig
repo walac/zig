@@ -62,8 +62,7 @@ pub fn build(b: &Builder) !void {
     dependOnLib(exe, llvm);
 
     if (exe.target.getOs() == builtin.Os.linux) {
-        const libstdcxx_path_padded = try b.exec([][]const u8{cxx_compiler, "-print-file-name=libstdc++.a"});
-        const libstdcxx_path = ??mem.split(libstdcxx_path_padded, "\r\n").next();
+        const libstdcxx_path = try findLibStdCxxPath(b, cxx_compiler);
         exe.addObjectFile(libstdcxx_path);
 
         exe.linkSystemLibrary("pthread");
@@ -230,4 +229,25 @@ fn nextValue(index: &usize, build_info: []const u8) []const u8 {
             else => continue,
         }
     }
+}
+
+fn findLibStdCxxPath(b: &Builder, cxx_compiler: []const u8) ![]const u8 {
+    return findLibStdCxxPathViaCC(b, cxx_compiler) catch findLibStdCxxPathViaFedora(b);
+}
+
+fn findLibStdCxxPathViaCC(b: &Builder, cxx_compiler: []const u8) ![]const u8 {
+    const libstdcxx_path_padded = try b.exec([][]const u8{cxx_compiler, "-print-file-name=libstdc++.a"});
+    const libstdcxx_path = ??mem.split(libstdcxx_path_padded, "\r\n").next();
+    if (mem.eql(u8, libstdcxx_path, "libstdc++.a")) {
+        return error.LibStdCxxNotFound;
+    }
+    return libstdcxx_path;
+}
+
+fn findLibStdCxxPathViaFedora(b: &Builder) ![]const u8 {
+    const redhat_release_contents = try std.io.readFileAlloc(b.allocator, "/etc/redhat-release");
+    if (mem.startsWith(u8, redhat_release_contents, "Fedora release 27 ")) {
+        return "/usr/lib/gcc/x86_64-redhat-linux/7/32/libstdc++.a";
+    }
+    return error.LibStdCxxNotFound;
 }
